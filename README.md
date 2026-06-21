@@ -6,6 +6,8 @@ distributions, counters, and the capability/honesty panel - in real time.
 
 > 🛟 **Need help or found a bug?** Get support at [support.doodesch.de](https://support.doodesch.de).
 
+**Live:** [snitch-web-qtskoq-fee0b5-37-27-70-183.sslip.io](https://snitch-web-qtskoq-fee0b5-37-27-70-183.sslip.io/) (and `snitch.doodesch.de` once DNS points to the Dokploy host).
+
 ## How it works
 
 - The **Snitch mod** (in Schedule I) runs a loopback HTTP + WebSocket server on `127.0.0.1:6140`.
