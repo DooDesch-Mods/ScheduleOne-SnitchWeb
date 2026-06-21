@@ -33,6 +33,7 @@ export function useSnitch(): SnitchConn {
     const connect = () => {
       if (cancelled) return;
       const p = PORTS[idx % PORTS.length];
+      let opened = false; // only advance the port scan if THIS socket never connected
       let ws: WebSocket;
       try {
         ws = new WebSocket(`ws://127.0.0.1:${p}/stream`);
@@ -49,6 +50,7 @@ export function useSnitch(): SnitchConn {
           ws.close();
           return;
         }
+        opened = true;
         setPort(p);
         setStatus("connected");
       };
@@ -64,7 +66,7 @@ export function useSnitch(): SnitchConn {
       ws.onclose = () => {
         if (cancelled) return;
         wsRef.current = null;
-        idx++;
+        if (!opened) idx++; // a working port that dropped (game restart) is retried first, not skipped
         setAttempts((a) => a + 1);
         setStatus("searching");
         retry = setTimeout(connect, 1500);

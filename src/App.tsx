@@ -188,7 +188,8 @@ function States({ blocks }: { blocks: StateBlock[] }) {
       ) : (
         <div className="flex flex-col gap-4">
           {blocks.map((b) => {
-            const max = Math.max(1, ...b.buckets.map((x) => x.count));
+            const buckets = b.buckets ?? [];
+            const max = Math.max(1, ...buckets.map((x) => x.count));
             return (
               <div key={b.id}>
                 <div className="flex justify-between text-xs mb-1">
@@ -196,7 +197,7 @@ function States({ blocks }: { blocks: StateBlock[] }) {
                   <span className="text-gray-500 mono">total {b.total}</span>
                 </div>
                 <div className="flex flex-col gap-1">
-                  {b.buckets.map((x) => (
+                  {buckets.map((x) => (
                     <div key={x.name} className="flex items-center gap-2 text-xs">
                       <span className="w-24 text-gray-400 truncate">{x.name}</span>
                       <div className="flex-1 h-2 rounded bg-[#0b0e14]">

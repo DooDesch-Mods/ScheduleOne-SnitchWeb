@@ -18,7 +18,7 @@ export interface SectionRow {
   group: string;
   label: string;
   ms: number;
-  p95: number;
+  max: number;
   calls: number;
   pct: number;
 }
