@@ -1,0 +1,17 @@
+@import "tailwindcss";
+
+:root { color-scheme: dark; }
+
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  background: #0b0e14;
+  color: #cdd6f4;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.mono { font-family: ui-monospace, "Cascadia Code", "JetBrains Mono", Menlo, monospace; }
+
+/* uPlot dark tweaks */
+.uplot, .uplot *, .uplot *::before, .uplot *::after { box-sizing: border-box; }
+.u-axis { color: #6b7280; }
