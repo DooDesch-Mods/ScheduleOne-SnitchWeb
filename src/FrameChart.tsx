@@ -2,9 +2,12 @@ import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 import { useEffect, useRef } from "react";
 
-const MAX = 240; // rolling window of points (~1 min at 4 Hz, or ~4 s at 60 Hz)
+const MAX = 240; // rolling window of points
 
-/** Streaming frame-time chart (uPlot canvas - 60 fps capable, tiny). Pushes one point per snapshot. */
+/**
+ * Streaming frame-time chart (uPlot canvas - 60 fps capable, tiny). Hover to read the value at any point;
+ * the axes are labelled so X (recent samples, newest at the right) and Y (frame time in ms) are self-explanatory.
+ */
 export function FrameChart({ ms }: { ms: number }) {
   const elRef = useRef<HTMLDivElement>(null);
   const uRef = useRef<uPlot | null>(null);
@@ -15,22 +18,44 @@ export function FrameChart({ ms }: { ms: number }) {
     if (!elRef.current) return;
     const opts: uPlot.Options = {
       width: elRef.current.clientWidth || 640,
-      height: 200,
-      cursor: { show: false },
-      legend: { show: false },
+      height: 210,
+      cursor: { show: true, points: { show: true, size: 6 } },
+      legend: { show: true, live: true },
       scales: { x: { time: false } },
       axes: [
-        { stroke: "#6b7280", grid: { stroke: "#1b1f2e" }, ticks: { stroke: "#1b1f2e" } },
-        { stroke: "#6b7280", grid: { stroke: "#1b1f2e" }, ticks: { stroke: "#1b1f2e" }, size: 46 },
+        {
+          stroke: "#6b7280",
+          grid: { stroke: "#1b1f2e" },
+          ticks: { stroke: "#1b1f2e" },
+          label: "recent samples  (newest →)",
+          labelGap: 2,
+          labelSize: 22,
+        },
+        {
+          stroke: "#6b7280",
+          grid: { stroke: "#1b1f2e" },
+          ticks: { stroke: "#1b1f2e" },
+          size: 50,
+          label: "frame time (ms)",
+          labelGap: 2,
+          labelSize: 22,
+        },
       ],
       series: [
-        {},
-        { label: "ms", stroke: "#89b4fa", width: 2, fill: "rgba(137,180,250,0.10)", points: { show: false } },
+        { label: "sample" },
+        {
+          label: "frame",
+          stroke: "#89b4fa",
+          width: 2,
+          fill: "rgba(137,180,250,0.10)",
+          points: { show: false },
+          value: (_u, v) => (v == null ? "--" : v.toFixed(2) + " ms"),
+        },
       ],
     };
     const u = new uPlot(opts, [[], []] as unknown as uPlot.AlignedData, elRef.current);
     uRef.current = u;
-    const onResize = () => u.setSize({ width: elRef.current!.clientWidth, height: 200 });
+    const onResize = () => u.setSize({ width: elRef.current!.clientWidth, height: 210 });
     window.addEventListener("resize", onResize);
     return () => {
       window.removeEventListener("resize", onResize);

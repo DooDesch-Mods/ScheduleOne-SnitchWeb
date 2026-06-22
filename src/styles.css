@@ -15,3 +15,8 @@ body {
 /* uPlot dark tweaks */
 .uplot, .uplot *, .uplot *::before, .uplot *::after { box-sizing: border-box; }
 .u-axis { color: #6b7280; }
+.u-legend { font-size: 11px; color: #9ca3af; margin-top: 2px; }
+.u-legend .u-marker { width: 10px; height: 10px; }
+.u-legend th, .u-legend td { padding: 0 6px; }
+.u-legend .u-value { color: #cdd6f4; font-family: ui-monospace, monospace; }
+.u-cursor-pt { border-color: #89b4fa !important; }
