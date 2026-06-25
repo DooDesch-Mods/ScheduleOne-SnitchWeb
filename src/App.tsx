@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { FrameChart } from "./FrameChart";
+import { LogView } from "./LogView";
 import { useSnitch } from "./useSnitch";
-import type { CounterRow, SectionRow, StateBlock } from "./protocol";
+import type { CounterRow, Panel, SectionRow, StateBlock } from "./protocol";
 
 const GROUP_COLORS: Record<string, string> = {
   Snitch: "#f38ba8",
@@ -13,9 +14,10 @@ const fpsColor = (fps: number) => (fps >= 50 ? "#a6e3a1" : fps >= 30 ? "#f9e2af"
 const fmt = (n: number, d = 2) => (Number.isFinite(n) ? n.toFixed(d) : "0");
 
 export default function App() {
-  const { snapshot, status, port, attempts, control } = useSnitch();
+  const { snapshot, status, port, attempts, control, sendAction, sendToggle } = useSnitch();
   const connected = status === "connected" || status === "idle";
   const f = snapshot?.frame;
+  const panels = snapshot?.panels ?? [];
 
   return (
     <div className="min-h-full max-w-7xl mx-auto px-5 py-5">
@@ -54,6 +56,26 @@ export default function App() {
             <Counters rows={snapshot?.counters ?? []} />
             <Caps />
           </div>
+
+          {panels.length > 0 && (
+            <div className="lg:col-span-3">
+              <h2 className="text-sm font-semibold text-gray-300 mb-3">Mod panels</h2>
+              <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
+                {panels.map((p) => (
+                  <PanelCard
+                    key={p.id}
+                    panel={p}
+                    counters={snapshot?.counters ?? []}
+                    states={snapshot?.states ?? []}
+                    sendAction={sendAction}
+                    sendToggle={sendToggle}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          <LogView timeline={snapshot?.logs?.timeline ?? []} panels={panels} />
         </div>
       )}
 
@@ -179,7 +201,7 @@ function Sections({ rows, frameMs }: { rows: SectionRow[]; frameMs: number }) {
 
   return (
     <Card
-      title={`Sections — ms/frame (frame ${fmt(frameMs)} ms)`}
+      title={`Sections - ms/frame (frame ${fmt(frameMs)} ms)`}
       hint="Per-section CPU cost, grouped by mod. Click a group to collapse it. Hover a row for details. Vanilla.* costs come from Harmony probes; your own come via the Snitch API."
     >
       {rows.length === 0 ? (
@@ -298,6 +320,142 @@ function Counters({ rows }: { rows: CounterRow[] }) {
         </div>
       )}
     </Card>
+  );
+}
+
+// Counters/states stay in the top-level arrays; a panel owns the ones whose id, split on the first ".", equals
+// the panel id (e.g. panel "Siesta" owns counter "Siesta.Deep" and state "Siesta" / "Siesta.X").
+const ownerOf = (id: string) => {
+  const i = id.indexOf(".");
+  return i < 0 ? id : id.slice(0, i);
+};
+
+function PanelCard({
+  panel,
+  counters,
+  states,
+  sendAction,
+  sendToggle,
+}: {
+  panel: Panel;
+  counters: CounterRow[];
+  states: StateBlock[];
+  sendAction: (id: string) => void;
+  sendToggle: (id: string, value: boolean) => void;
+}) {
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const isCollapsed = collapsed.has(panel.id);
+  const toggleCollapse = () =>
+    setCollapsed((prev) => {
+      const n = new Set(prev);
+      n.has(panel.id) ? n.delete(panel.id) : n.add(panel.id);
+      return n;
+    });
+
+  const myCounters = counters.filter((c) => ownerOf(c.id) === panel.id);
+  const myStates = states.filter((b) => ownerOf(b.id) === panel.id);
+
+  return (
+    <section className="rounded-xl bg-[#11151f] border border-[#1b1f2e] p-4">
+      <button
+        className="w-full flex justify-between items-center text-sm font-semibold text-gray-300 hover:opacity-80"
+        onClick={toggleCollapse}
+        title={`${panel.id} - click to ${isCollapsed ? "expand" : "collapse"}`}
+      >
+        <span>
+          {isCollapsed ? "▸" : "▾"} {panel.title}
+        </span>
+      </button>
+
+      {!isCollapsed && (
+        <div className="mt-3 flex flex-col gap-3">
+          {panel.text ? (
+            <pre className="text-xs text-gray-400 whitespace-pre-wrap mono leading-relaxed m-0">{panel.text}</pre>
+          ) : null}
+
+          {myCounters.length > 0 && (
+            <div className="flex flex-col gap-1 text-xs mono">
+              {myCounters.map((c) => (
+                <div
+                  key={c.id}
+                  className="flex justify-between cursor-help hover:bg-[#0d1018] rounded px-1"
+                  title={`${c.id} = ${fmt(c.value, 2)} ${c.unit} [${c.state}]`}
+                >
+                  <span className="text-gray-300">{c.id}</span>
+                  <span>
+                    {fmt(c.value, 2)} <span className="text-gray-500">{c.unit}</span>{" "}
+                    <span className={c.state === "OK" ? "text-[#a6e3a1]" : "text-[#f38ba8]"}>[{c.state}]</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {myStates.map((b) => {
+            const buckets = b.buckets ?? [];
+            const max = Math.max(1, ...buckets.map((x) => x.count));
+            return (
+              <div key={b.id}>
+                <div className="flex justify-between text-xs mb-1">
+                  <span className="font-medium cursor-help" title={`Provider: ${b.id}`}>
+                    {b.title}
+                  </span>
+                  <span className="text-gray-500 mono">total {b.total}</span>
+                </div>
+                <div className="flex flex-col gap-1">
+                  {buckets.map((x) => {
+                    const pct = b.total > 0 ? (x.count / b.total) * 100 : 0;
+                    return (
+                      <div
+                        key={x.name}
+                        className="flex items-center gap-2 text-xs cursor-help hover:bg-[#0d1018] rounded px-1"
+                        title={`${x.name}: ${x.count} (${fmt(pct, 1)}% of ${b.total})`}
+                      >
+                        <span className="w-24 text-gray-400 truncate">{x.name}</span>
+                        <div className="flex-1 h-2 rounded bg-[#0b0e14]">
+                          <div className="h-2 rounded bg-[#89b4fa]" style={{ width: `${(x.count / max) * 100}%` }} />
+                        </div>
+                        <span className="w-10 text-right mono text-gray-300">{x.count}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+
+          {panel.toggles.length > 0 && (
+            <div className="flex flex-col gap-1.5">
+              {panel.toggles.map((t) => (
+                <label
+                  key={t.id}
+                  className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer select-none"
+                  title={`${t.id} = ${t.value ? "on" : "off"}`}
+                >
+                  <input
+                    type="checkbox"
+                    className="accent-[#89b4fa]"
+                    checked={t.value}
+                    onChange={() => sendToggle(t.id, !t.value)}
+                  />
+                  {t.label}
+                </label>
+              ))}
+            </div>
+          )}
+
+          {panel.actions.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {panel.actions.map((a) => (
+                <button key={a.id} className="btn" title={a.id} onClick={() => sendAction(a.id)}>
+                  {a.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </section>
   );
 }
 

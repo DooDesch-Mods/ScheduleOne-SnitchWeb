@@ -42,6 +42,39 @@ export interface StateBlock {
   buckets: StateBucket[];
 }
 
+export interface PanelAction {
+  id: string;
+  label: string;
+}
+
+export interface PanelToggle {
+  id: string;
+  label: string;
+  value: boolean;
+}
+
+export interface Panel {
+  id: string;
+  title: string;
+  hasLog: boolean;
+  text: string;
+  actions: PanelAction[];
+  toggles: PanelToggle[];
+}
+
+// lvl: 0 = info, 1 = warning, 2 = error. ch = channel = mod id. seq = monotonic id (React key + de-dupe).
+export interface LogEntry {
+  seq: number;
+  t: string;
+  ch: string;
+  lvl: number;
+  msg: string;
+}
+
+export interface LogsBlock {
+  timeline: LogEntry[];
+}
+
 export interface Snapshot {
   type: "snapshot";
   v: number;
@@ -51,6 +84,9 @@ export interface Snapshot {
   sections: SectionRow[];
   counters: CounterRow[];
   states: StateBlock[];
+  // Both optional/defaulted so older or placeholder payloads (without panels/logs) don't crash the UI.
+  panels?: Panel[];
+  logs?: LogsBlock;
 }
 
 export type ConnState = "searching" | "connected" | "idle" | "error";

@@ -10,6 +10,8 @@ export interface SnitchConn {
   port: number | null;
   attempts: number;
   control: (cmd: "start" | "stop" | "reset" | "report") => void;
+  sendAction: (id: string) => void;
+  sendToggle: (id: string, value: boolean) => void;
 }
 
 /**
@@ -92,15 +94,30 @@ export function useSnitch(): SnitchConn {
     };
   }, []);
 
-  const control = useCallback(
-    (cmd: "start" | "stop" | "reset" | "report") => {
+  // Single best-effort POST to /control with query params (matches the server: cmd/id/value all read from the
+  // query string). All control verbs go through here so they share one transport.
+  const post = useCallback(
+    (params: Record<string, string>) => {
       if (port == null) return;
-      fetch(`http://127.0.0.1:${port}/control?cmd=${cmd}`, { method: "POST" }).catch(() => {
+      const qs = new URLSearchParams(params).toString();
+      fetch(`http://127.0.0.1:${port}/control?${qs}`, { method: "POST" }).catch(() => {
         /* control is best-effort */
       });
     },
     [port],
   );
 
-  return { snapshot, status, port, attempts, control };
+  const control = useCallback(
+    (cmd: "start" | "stop" | "reset" | "report") => post({ cmd }),
+    [post],
+  );
+
+  const sendAction = useCallback((id: string) => post({ cmd: "action", id }), [post]);
+
+  const sendToggle = useCallback(
+    (id: string, value: boolean) => post({ cmd: "toggle", id, value: value ? "true" : "false" }),
+    [post],
+  );
+
+  return { snapshot, status, port, attempts, control, sendAction, sendToggle };
 }
