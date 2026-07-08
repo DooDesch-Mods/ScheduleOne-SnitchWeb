@@ -19,7 +19,7 @@ export default function App() {
   const conn = useSnitch();
   if (conn.remote) return <RemoteView conn={conn} />;
 
-  const { snapshot, status, port, attempts, control, sendAction, sendToggle, lan } = conn;
+  const { snapshot, status, port, attempts, control, sendAction, sendToggle, caps, lan } = conn;
   const connected = status === "connected" || status === "idle";
   const f = snapshot?.frame;
   const panels = snapshot?.panels ?? [];
@@ -28,7 +28,7 @@ export default function App() {
     <div className="min-h-full max-w-7xl mx-auto px-5 py-5">
       <Header status={status} port={port} snapshot={snapshot} control={control} />
 
-      <ConnectPhone lan={lan} />
+      {caps.includes("phone-remote") && <ConnectPhone lan={lan} />}
 
       {!connected ? (
         <Searching attempts={attempts} />

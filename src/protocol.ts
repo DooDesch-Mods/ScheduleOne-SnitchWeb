@@ -79,7 +79,9 @@ export interface Snapshot {
   type: "snapshot";
   v: number;
   t: number;
-  meta: { mod: string; version: string; scene: string; active: boolean };
+  // caps: capability tokens the connected mod advertises, so the dashboard can feature-gate. Optional so older
+  // payloads (without it) simply gate every optional feature off.
+  meta: { mod: string; version: string; scene: string; active: boolean; caps?: string[] };
   frame: FrameStats;
   sections: SectionRow[];
   counters: CounterRow[];

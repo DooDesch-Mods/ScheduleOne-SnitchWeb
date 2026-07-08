@@ -23,6 +23,9 @@ export interface SnitchConn {
   mode: "desktop" | "lan";
   /** Compact phone remote requested via #remote in the URL. */
   remote: boolean;
+  /** Capability tokens the connected mod advertises (from /health or the snapshot meta). Feature-gate on these
+   * rather than the version string - an older Snitch simply omits tokens it doesn't have. */
+  caps: string[];
   /** LAN endpoint info from /health (desktop mode) so the dashboard can render a "connect a phone" QR. */
   lan: LanInfo | null;
   control: (cmd: "start" | "stop" | "reset" | "report") => void;
@@ -72,6 +75,7 @@ export function useSnitch(): SnitchConn {
   const [port, setPort] = useState<number | null>(null);
   const [attempts, setAttempts] = useState(0);
   const [lan, setLan] = useState<LanInfo | null>(null);
+  const [caps, setCaps] = useState<string[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
 
   // ----- desktop/hosted: loopback WebSocket scan (unchanged behaviour) -----
@@ -110,6 +114,7 @@ export function useSnitch(): SnitchConn {
           const s = JSON.parse(e.data as string) as Snapshot;
           setSnapshot(s);
           setStatus(s.meta?.active ? "connected" : "idle");
+          if (Array.isArray(s.meta?.caps)) setCaps(s.meta.caps);
         } catch {
           /* ignore malformed frame */
         }
@@ -154,7 +159,11 @@ export function useSnitch(): SnitchConn {
         const r = await fetch(`http://127.0.0.1:${port}/health`, { cache: "no-store" });
         if (r.ok) {
           const h = await r.json();
-          if (!cancelled) setLan((h?.lan as LanInfo) ?? { enabled: false });
+          if (!cancelled) {
+            // Preserve "no lan field" (older mod) as null, distinct from an explicit {enabled:false} (LAN off).
+            setLan((h?.lan as LanInfo) ?? null);
+            if (Array.isArray(h?.caps)) setCaps(h.caps);
+          }
         }
       } catch {
         /* health is best-effort */
@@ -186,6 +195,7 @@ export function useSnitch(): SnitchConn {
           if (!cancelled) {
             setSnapshot(s);
             setStatus(s.meta?.active ? "connected" : "idle");
+            if (Array.isArray(s.meta?.caps)) setCaps(s.meta.caps);
           }
         } else {
           if (!cancelled) {
@@ -237,5 +247,5 @@ export function useSnitch(): SnitchConn {
     [post],
   );
 
-  return { snapshot, status, port, attempts, mode, remote, lan, control, sendAction, sendToggle };
+  return { snapshot, status, port, attempts, mode, remote, caps, lan, control, sendAction, sendToggle };
 }
