@@ -75,8 +75,9 @@ export interface RelayOpts {
   token: string;
   /** A decrypted peer payload arrived. */
   onData: (obj: unknown) => void;
-  /** Relay/connection signalling. `n` is the current client count for join/leave. */
-  onEvent?: (ev: RelayEvent, n?: number) => void;
+  /** Relay/connection signalling. `info.n` is the client count (join/leave); `info.sameNet` (on ready, for a
+   * client) is true when the client shares the host's public IP - i.e. likely the same LAN. */
+  onEvent?: (ev: RelayEvent, info?: { n?: number; sameNet?: boolean }) => void;
 }
 
 export interface RelayHandle {
@@ -118,7 +119,7 @@ export function openRelay(opts: RelayOpts): RelayHandle {
         return;
       }
       if (msg && typeof msg.__relay === "string") {
-        opts.onEvent?.(msg.__relay as RelayEvent, msg.n);
+        opts.onEvent?.(msg.__relay as RelayEvent, { n: msg.n, sameNet: msg.sameNet });
         return;
       }
       if (msg && typeof msg.d === "string") {

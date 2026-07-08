@@ -251,12 +251,22 @@ export function useSnitch(): SnitchConn {
           setHostPresent(true);
         }
       },
-      onEvent: (ev) => {
+      onEvent: (ev, info) => {
         if (ev === "nohost") {
           setHostPresent(false);
           setStatus("searching");
         } else if (ev === "ready" || ev === "join" || ev === "open") {
           setHostPresent(true);
+          // Same LAN as the game (shared public IP): connect directly and skip the cloud. The relay was only the
+          // rendezvous. Once-guard so that if the direct page can't load, going back keeps you on the relay.
+          if (ev === "ready" && info?.sameNet && directUrl && !sessionStorage.getItem("snitch-tried-direct")) {
+            try {
+              sessionStorage.setItem("snitch-tried-direct", "1");
+              window.location.href = directUrl;
+            } catch {
+              /* stay on the relay */
+            }
+          }
         } else if (ev === "close") {
           setStatus("searching");
         }

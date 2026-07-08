@@ -69,8 +69,8 @@ export function ConnectPhone({
           /* best-effort */
         });
       },
-      onEvent: (ev, n) => {
-        if (ev === "join" || ev === "leave") setPhones(n ?? 0);
+      onEvent: (ev, info) => {
+        if (ev === "join" || ev === "leave") setPhones(info?.n ?? 0);
         else if (ev === "nohost" || ev === "close") setPhones(0);
       },
     });
