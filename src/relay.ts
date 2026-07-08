@@ -3,20 +3,16 @@
 // token travels in the QR, never to the server). AES-GCM via WebCrypto; both sides run in a secure context
 // (the hosted HTTPS page), so subtle crypto is available.
 
-const CANONICAL_RELAY = "wss://snitch.doodesch.de/relay";
-const LOOPBACK = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
+// The relay is a standalone, app-namespaced service (any DooDesch app can use it); Snitch is just one consumer.
+const RELAY_URL = "wss://relay.doodesch.de";
+const RELAY_APP = "snitch";
 
 /** The origin the phone must load for the relay (always the hosted HTTPS site, reachable from any network). */
 export const HOSTED_ORIGIN = "https://snitch.doodesch.de";
 
-/** Relay WebSocket URL. Same-origin /relay when served from the hosted HTTPS site (shares its cert); otherwise
- * the canonical hosted relay, since that is the one a phone on another network can reach. */
+/** Relay WebSocket URL for this app's namespace. */
 export function relayWsUrl(role: "host" | "client", code: string): string {
-  let base = CANONICAL_RELAY;
-  if (typeof location !== "undefined" && location.protocol === "https:" && !LOOPBACK.has(location.hostname)) {
-    base = `wss://${location.host}/relay`;
-  }
-  return `${base}?role=${role}&code=${encodeURIComponent(code)}`;
+  return `${RELAY_URL}/?app=${RELAY_APP}&role=${role}&code=${encodeURIComponent(code)}`;
 }
 
 /** A random URL-safe pairing code the relay uses to match a host and its phones. */
