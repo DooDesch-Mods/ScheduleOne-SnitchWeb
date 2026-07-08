@@ -1,33 +1,82 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ConnState, Snapshot } from "./protocol";
 
-// The in-mod server's default port + a small range to scan (matches Snitch's ServerPort preference).
+// The loopback server's default port + a small range to scan (matches Snitch's ServerPort preference).
 const PORTS = [6140, 6141, 6142];
+const LOOPBACK = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
+
+/** The in-game LAN server exposes this under /health so the desktop can build the phone URL + QR. */
+export interface LanInfo {
+  enabled: boolean;
+  ip?: string;
+  port?: number;
+  url?: string;
+  token?: string;
+}
 
 export interface SnitchConn {
   snapshot: Snapshot | null;
   status: ConnState;
   port: number | null;
   attempts: number;
+  /** "lan" when this page is served by the in-game LAN server (phone); "desktop" for loopback/hosted. */
+  mode: "desktop" | "lan";
+  /** Compact phone remote requested via #remote in the URL. */
+  remote: boolean;
+  /** LAN endpoint info from /health (desktop mode) so the dashboard can render a "connect a phone" QR. */
+  lan: LanInfo | null;
   control: (cmd: "start" | "stop" | "reset" | "report") => void;
   sendAction: (id: string) => void;
   sendToggle: (id: string, value: boolean) => void;
 }
 
+/** Parse the QR hash, e.g. "#remote&t=abcd1234" -> { remote: true, token: "abcd1234" }. */
+function parseHash(): { remote: boolean; token: string } {
+  const h = (typeof location !== "undefined" ? location.hash : "").replace(/^#/, "");
+  let remote = false;
+  let token = "";
+  for (const part of h.split(/[&/?]/)) {
+    if (!part) continue;
+    const [k, v] = part.split("=");
+    if (k === "remote") remote = true;
+    else if (k === "t" || k === "token") token = decodeURIComponent(v ?? "");
+  }
+  return { remote, token };
+}
+
 /**
- * Connects the dashboard to a local Snitch instance. On mount it scans the known loopback ports, opens a
- * WebSocket to /stream, and streams live snapshots. Auto-reconnects so it survives the game restarting. The
- * data never leaves the machine - the hosted page talks straight to ws://127.0.0.1. (Chrome may show a
- * one-time "allow local network access" prompt; the server already sends the Private-Network-Access header.)
+ * "lan": the page was served over plain HTTP from a non-loopback host - i.e. the in-game LAN server delivered
+ * it to a phone. In that case we talk same-origin to that very host (no mixed content, no port scan). Anything
+ * else (loopback bundle, or the hosted HTTPS site) uses the classic 127.0.0.1 WebSocket scan.
+ */
+function detectMode(): "desktop" | "lan" {
+  if (typeof location === "undefined") return "desktop";
+  if (LOOPBACK.has(location.hostname)) return "desktop";
+  if (location.protocol === "http:") return "lan";
+  return "desktop";
+}
+
+/**
+ * Connects the dashboard to a Snitch instance. Two transports, one interface:
+ *  - desktop/hosted: scans loopback ports and streams live snapshots over WebSocket (the original path).
+ *  - phone/LAN: polls same-origin /snapshot from the in-game LAN server (which has no WebSocket) and sends
+ *    control with the pairing token carried in the QR hash.
+ * Both auto-recover; the data never transits a third party.
  */
 export function useSnitch(): SnitchConn {
+  const mode = useMemo(detectMode, []);
+  const { remote, token } = useMemo(parseHash, []);
+
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [status, setStatus] = useState<ConnState>("searching");
   const [port, setPort] = useState<number | null>(null);
   const [attempts, setAttempts] = useState(0);
+  const [lan, setLan] = useState<LanInfo | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
+  // ----- desktop/hosted: loopback WebSocket scan (unchanged behaviour) -----
   useEffect(() => {
+    if (mode !== "desktop") return;
     let cancelled = false;
     let idx = 0;
     let retry: ReturnType<typeof setTimeout> | undefined;
@@ -92,32 +141,101 @@ export function useSnitch(): SnitchConn {
         /* noop */
       }
     };
-  }, []);
+  }, [mode]);
 
-  // Single best-effort POST to /control with query params (matches the server: cmd/id/value all read from the
-  // query string). All control verbs go through here so they share one transport.
+  // ----- desktop/hosted: poll /health for the LAN endpoint (so the "connect a phone" QR appears/updates when
+  // the user runs 'snitch lan on' at runtime). Only meaningful once a loopback port is known. -----
+  useEffect(() => {
+    if (mode !== "desktop" || port == null) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const tick = async () => {
+      try {
+        const r = await fetch(`http://127.0.0.1:${port}/health`, { cache: "no-store" });
+        if (r.ok) {
+          const h = await r.json();
+          if (!cancelled) setLan((h?.lan as LanInfo) ?? { enabled: false });
+        }
+      } catch {
+        /* health is best-effort */
+      } finally {
+        if (!cancelled) timer = setTimeout(tick, 3000);
+      }
+    };
+    tick();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [mode, port]);
+
+  // ----- phone/LAN: same-origin snapshot polling (the LAN server has no WebSocket) -----
+  useEffect(() => {
+    if (mode !== "lan") return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const q = token ? `?token=${encodeURIComponent(token)}` : "";
+    setPort(Number(location.port) || null);
+
+    const poll = async () => {
+      if (cancelled) return;
+      try {
+        const r = await fetch(`/snapshot${q}`, { cache: "no-store" });
+        if (r.ok) {
+          const s = (await r.json()) as Snapshot;
+          if (!cancelled) {
+            setSnapshot(s);
+            setStatus(s.meta?.active ? "connected" : "idle");
+          }
+        } else {
+          if (!cancelled) {
+            setStatus("searching");
+            setAttempts((a) => a + 1);
+          }
+        }
+      } catch {
+        if (!cancelled) {
+          setStatus("searching");
+          setAttempts((a) => a + 1);
+        }
+      } finally {
+        if (!cancelled) timer = setTimeout(poll, 400);
+      }
+    };
+    poll();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [mode, token]);
+
+  // Single best-effort control POST. LAN mode goes same-origin with the pairing token; desktop mode hits the
+  // known loopback port (matches the server: cmd/id/value read from the query string).
   const post = useCallback(
     (params: Record<string, string>) => {
-      if (port == null) return;
-      const qs = new URLSearchParams(params).toString();
-      fetch(`http://127.0.0.1:${port}/control?${qs}`, { method: "POST" }).catch(() => {
+      const qp = { ...params };
+      let base: string;
+      if (mode === "lan") {
+        if (token) qp.token = token;
+        base = "";
+      } else {
+        if (port == null) return;
+        base = `http://127.0.0.1:${port}`;
+      }
+      const qs = new URLSearchParams(qp).toString();
+      fetch(`${base}/control?${qs}`, { method: "POST" }).catch(() => {
         /* control is best-effort */
       });
     },
-    [port],
+    [mode, port, token],
   );
 
-  const control = useCallback(
-    (cmd: "start" | "stop" | "reset" | "report") => post({ cmd }),
-    [post],
-  );
-
+  const control = useCallback((cmd: "start" | "stop" | "reset" | "report") => post({ cmd }), [post]);
   const sendAction = useCallback((id: string) => post({ cmd: "action", id }), [post]);
-
   const sendToggle = useCallback(
     (id: string, value: boolean) => post({ cmd: "toggle", id, value: value ? "true" : "false" }),
     [post],
   );
 
-  return { snapshot, status, port, attempts, control, sendAction, sendToggle };
+  return { snapshot, status, port, attempts, mode, remote, lan, control, sendAction, sendToggle };
 }

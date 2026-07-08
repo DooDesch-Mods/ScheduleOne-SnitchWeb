@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import { FrameChart } from "./FrameChart";
 import { LogView } from "./LogView";
+import { RemoteView } from "./RemoteView";
+import { ConnectPhone } from "./ConnectPhone";
 import { useSnitch } from "./useSnitch";
 import type { CounterRow, Panel, SectionRow, StateBlock } from "./protocol";
 
@@ -14,7 +16,10 @@ const fpsColor = (fps: number) => (fps >= 50 ? "#a6e3a1" : fps >= 30 ? "#f9e2af"
 const fmt = (n: number, d = 2) => (Number.isFinite(n) ? n.toFixed(d) : "0");
 
 export default function App() {
-  const { snapshot, status, port, attempts, control, sendAction, sendToggle } = useSnitch();
+  const conn = useSnitch();
+  if (conn.remote) return <RemoteView conn={conn} />;
+
+  const { snapshot, status, port, attempts, control, sendAction, sendToggle, lan } = conn;
   const connected = status === "connected" || status === "idle";
   const f = snapshot?.frame;
   const panels = snapshot?.panels ?? [];
@@ -22,6 +27,8 @@ export default function App() {
   return (
     <div className="min-h-full max-w-7xl mx-auto px-5 py-5">
       <Header status={status} port={port} snapshot={snapshot} control={control} />
+
+      <ConnectPhone lan={lan} />
 
       {!connected ? (
         <Searching attempts={attempts} />
