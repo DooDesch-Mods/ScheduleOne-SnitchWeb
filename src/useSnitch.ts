@@ -13,6 +13,8 @@ export interface LanInfo {
   port?: number;
   url?: string;
   token?: string;
+  /** True when the game has a bundled dashboard to serve on the LAN (else only the relay path is offered). */
+  bundled?: boolean;
 }
 
 export interface SnitchConn {

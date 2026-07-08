@@ -34,9 +34,9 @@ export function ConnectPhone({
   const portRef = useRef<number | null>(port);
   portRef.current = port;
 
-  // The QR carries the direct LAN shortcut only when the LAN endpoint is on AND its token is the one we paired
-  // with (i.e. it was available when we activated), so the shortcut's token always matches the LAN server.
-  const includeLan = !!lan?.enabled && !!lan.ip && !!lan.token && lan.token === token;
+  // The QR carries the direct LAN shortcut only when the LAN endpoint is on, has a bundled dashboard to serve,
+  // and its token is the one we paired with - so the shortcut's token always matches the LAN server.
+  const includeLan = !!lan?.enabled && !!lan.bundled && !!lan.ip && !!lan.token && lan.token === token;
   const phoneUrl = code && token ? `${HOSTED_ORIGIN}/#join=${encodeURIComponent(code)}&t=${encodeURIComponent(token)}${includeLan ? `&lan=${lan!.ip}:${lan!.port}` : ""}` : "";
 
   const expand = () => {
