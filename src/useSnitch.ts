@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ConnState, Snapshot } from "./protocol";
+import { openRelay, type RelayHandle } from "./relay";
 
 // The loopback server's default port + a small range to scan (matches Snitch's ServerPort preference).
 const PORTS = [6140, 6141, 6142];
@@ -19,10 +20,15 @@ export interface SnitchConn {
   status: ConnState;
   port: number | null;
   attempts: number;
-  /** "lan" when this page is served by the in-game LAN server (phone); "desktop" for loopback/hosted. */
-  mode: "desktop" | "lan";
-  /** Compact phone remote requested via #remote in the URL. */
+  /** "lan" = served by the in-game LAN server (same-Wi-Fi phone); "relay" = phone reaching the desktop through
+   * the cloud relay; "desktop" = loopback/hosted dashboard. */
+  mode: "desktop" | "lan" | "relay";
+  /** Compact phone remote (via #remote, or implied by relay mode). */
   remote: boolean;
+  /** relay mode only: whether a desktop host is currently bridging (false = ask the user to open the dashboard). */
+  hostPresent: boolean;
+  /** relay mode only: a same-Wi-Fi shortcut URL to the in-game LAN server, if the QR carried one. */
+  directUrl: string | null;
   /** Capability tokens the connected mod advertises (from /health or the snapshot meta). Feature-gate on these
    * rather than the version string - an older Snitch simply omits tokens it doesn't have. */
   caps: string[];
@@ -33,26 +39,32 @@ export interface SnitchConn {
   sendToggle: (id: string, value: boolean) => void;
 }
 
-/** Parse the QR hash, e.g. "#remote&t=abcd1234" -> { remote: true, token: "abcd1234" }. */
-function parseHash(): { remote: boolean; token: string } {
+/** Parse the QR hash. Phase 1: "#remote&t=abcd". Phase 2 (relay): "#join=<code>&t=<token>&lan=<ip:port>". */
+function parseHash(): { remote: boolean; token: string; join: string; lan: string } {
   const h = (typeof location !== "undefined" ? location.hash : "").replace(/^#/, "");
   let remote = false;
   let token = "";
+  let join = "";
+  let lan = "";
   for (const part of h.split(/[&/?]/)) {
     if (!part) continue;
     const [k, v] = part.split("=");
     if (k === "remote") remote = true;
     else if (k === "t" || k === "token") token = decodeURIComponent(v ?? "");
+    else if (k === "join") join = decodeURIComponent(v ?? "");
+    else if (k === "lan") lan = decodeURIComponent(v ?? "");
   }
-  return { remote, token };
+  return { remote, token, join, lan };
 }
 
 /**
- * "lan": the page was served over plain HTTP from a non-loopback host - i.e. the in-game LAN server delivered
- * it to a phone. In that case we talk same-origin to that very host (no mixed content, no port scan). Anything
- * else (loopback bundle, or the hosted HTTPS site) uses the classic 127.0.0.1 WebSocket scan.
+ * "relay": the QR carried a pairing code (#join=...) - the phone reaches the desktop through the cloud relay.
+ * "lan": the page was served over plain HTTP from a non-loopback host - the in-game LAN server delivered it to
+ * a same-Wi-Fi phone, so we talk same-origin to that host. Otherwise (loopback bundle or hosted HTTPS site) we
+ * use the classic 127.0.0.1 WebSocket scan.
  */
-function detectMode(): "desktop" | "lan" {
+function detectMode(join: string): "desktop" | "lan" | "relay" {
+  if (join) return "relay";
   if (typeof location === "undefined") return "desktop";
   if (LOOPBACK.has(location.hostname)) return "desktop";
   if (location.protocol === "http:") return "lan";
@@ -67,8 +79,10 @@ function detectMode(): "desktop" | "lan" {
  * Both auto-recover; the data never transits a third party.
  */
 export function useSnitch(): SnitchConn {
-  const mode = useMemo(detectMode, []);
-  const { remote, token } = useMemo(parseHash, []);
+  const { remote: remoteFlag, token, join, lan: lanParam } = useMemo(parseHash, []);
+  const mode = useMemo(() => detectMode(join), [join]);
+  const remote = remoteFlag || mode === "relay";
+  const directUrl = lanParam ? `http://${lanParam}/#remote${token ? `&t=${encodeURIComponent(token)}` : ""}` : null;
 
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [status, setStatus] = useState<ConnState>("searching");
@@ -76,7 +90,9 @@ export function useSnitch(): SnitchConn {
   const [attempts, setAttempts] = useState(0);
   const [lan, setLan] = useState<LanInfo | null>(null);
   const [caps, setCaps] = useState<string[]>([]);
+  const [hostPresent, setHostPresent] = useState(true);
   const wsRef = useRef<WebSocket | null>(null);
+  const relayRef = useRef<RelayHandle | null>(null);
 
   // ----- desktop/hosted: loopback WebSocket scan (unchanged behaviour) -----
   useEffect(() => {
@@ -219,10 +235,49 @@ export function useSnitch(): SnitchConn {
     };
   }, [mode, token]);
 
+  // ----- phone/relay: reach the desktop host through the cloud relay (payloads are E2E-encrypted) -----
+  useEffect(() => {
+    if (mode !== "relay" || !join) return;
+    const handle = openRelay({
+      role: "client",
+      code: join,
+      token,
+      onData: (obj) => {
+        const s = obj as Snapshot;
+        if (s && s.type === "snapshot") {
+          setSnapshot(s);
+          setStatus(s.meta?.active ? "connected" : "idle");
+          if (Array.isArray(s.meta?.caps)) setCaps(s.meta.caps);
+          setHostPresent(true);
+        }
+      },
+      onEvent: (ev) => {
+        if (ev === "nohost") {
+          setHostPresent(false);
+          setStatus("searching");
+        } else if (ev === "ready" || ev === "join" || ev === "open") {
+          setHostPresent(true);
+        } else if (ev === "close") {
+          setStatus("searching");
+        }
+      },
+    });
+    relayRef.current = handle;
+    return () => {
+      handle.close();
+      relayRef.current = null;
+    };
+  }, [mode, join, token]);
+
   // Single best-effort control POST. LAN mode goes same-origin with the pairing token; desktop mode hits the
   // known loopback port (matches the server: cmd/id/value read from the query string).
   const post = useCallback(
     (params: Record<string, string>) => {
+      if (mode === "relay") {
+        // Sent to the desktop host over the relay; the host replays it against the local game.
+        relayRef.current?.send({ ...params });
+        return;
+      }
       const qp = { ...params };
       let base: string;
       if (mode === "lan") {
@@ -247,5 +302,5 @@ export function useSnitch(): SnitchConn {
     [post],
   );
 
-  return { snapshot, status, port, attempts, mode, remote, caps, lan, control, sendAction, sendToggle };
+  return { snapshot, status, port, attempts, mode, remote, hostPresent, directUrl, caps, lan, control, sendAction, sendToggle };
 }

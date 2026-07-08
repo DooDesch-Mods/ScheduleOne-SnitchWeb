@@ -9,12 +9,13 @@ const fmt = (n: number, d = 0) => (Number.isFinite(n) ? n.toFixed(d) : "0");
  * things from your phone without reaching for the desktop. Rendered when the URL carries #remote.
  */
 export function RemoteView({ conn }: { conn: SnitchConn }) {
-  const { snapshot, status, control, sendAction, sendToggle } = conn;
+  const { snapshot, status, control, sendAction, sendToggle, mode, hostPresent, directUrl } = conn;
   const connected = status === "connected" || status === "idle";
   const f = snapshot?.frame;
   const panels = snapshot?.panels ?? [];
   const active = snapshot?.meta?.active;
   const dot = status === "connected" ? "#a6e3a1" : status === "idle" ? "#f9e2af" : "#f38ba8";
+  const viaRelay = mode === "relay";
 
   return (
     <div className="min-h-full max-w-md mx-auto px-4 py-4 flex flex-col gap-4">
@@ -39,10 +40,31 @@ export function RemoteView({ conn }: { conn: SnitchConn }) {
         </span>
       </header>
 
+      {directUrl && (
+        <a
+          className="rbtn primary text-center block no-underline"
+          href={directUrl}
+          title="Connect directly over your Wi-Fi (faster, no cloud)"
+        >
+          ⚡ Same Wi-Fi? Connect directly
+        </a>
+      )}
+
       {!connected ? (
         <div className="rounded-xl bg-[#11151f] border border-[#1b1f2e] p-6 text-center text-sm text-gray-400">
-          Connecting to Snitch on this network… Make sure the game is running and the phone is on the same Wi-Fi.
-          If it stays here, allow the port through the PC's firewall (Private network).
+          {viaRelay && !hostPresent ? (
+            <>
+              Waiting for your PC. Open <b className="text-gray-200">snitch.doodesch.de</b> on the computer running
+              the game and expand "Connect a phone" - that tab bridges the profiler to your phone.
+            </>
+          ) : viaRelay ? (
+            <>Connecting through the relay… keep the desktop dashboard tab open on your PC.</>
+          ) : (
+            <>
+              Connecting to Snitch on this network… Make sure the game is running and the phone is on the same
+              Wi-Fi. If it stays here, allow the port through the PC's firewall (Private network).
+            </>
+          )}
         </div>
       ) : (
         <>
