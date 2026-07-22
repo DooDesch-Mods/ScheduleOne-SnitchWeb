@@ -4,7 +4,7 @@ The live web dashboard for the **Snitch** Schedule I performance profiler. It co
 browser, to a local Snitch instance over WebSocket and shows live frame times, section costs, entity-state
 distributions, counters, and the capability/honesty panel - in real time.
 
-> 🛟 **Need help or found a bug?** Get support at [support.doodesch.de](https://support.doodesch.de).
+> 🛟 **Need help or found a bug?** Get support at [support.doodesch.de/snitchweb](https://support.doodesch.de/snitchweb).
 
 **Live:** [snitch-web-qtskoq-fee0b5-37-27-70-183.sslip.io](https://snitch-web-qtskoq-fee0b5-37-27-70-183.sslip.io/) (and `snitch.doodesch.de` once DNS points to the Dokploy host).
 
