@@ -9,7 +9,7 @@ const fmt = (n: number, d = 0) => (Number.isFinite(n) ? n.toFixed(d) : "0");
  * things from your phone without reaching for the desktop. Rendered when the URL carries #remote.
  */
 export function RemoteView({ conn }: { conn: SnitchConn }) {
-  const { snapshot, status, control, sendAction, sendToggle, mode, hostPresent, directUrl } = conn;
+  const { snapshot, status, control, sendAction, sendToggle, sendSlider, mode, hostPresent, directUrl } = conn;
   const connected = status === "connected" || status === "idle";
   const f = snapshot?.frame;
   const panels = snapshot?.panels ?? [];
@@ -100,7 +100,8 @@ export function RemoteView({ conn }: { conn: SnitchConn }) {
           </div>
 
           {panels.map((p) => {
-            if (p.actions.length === 0 && p.toggles.length === 0 && !p.text) return null;
+            const sliders = p.sliders ?? [];
+            if (p.actions.length === 0 && p.toggles.length === 0 && sliders.length === 0 && !p.text) return null;
             return (
               <div key={p.id} className="rounded-xl bg-[#11151f] border border-[#1b1f2e] p-4 flex flex-col gap-3">
                 <h2 className="text-sm font-semibold text-gray-300">{p.title}</h2>
@@ -121,6 +122,29 @@ export function RemoteView({ conn }: { conn: SnitchConn }) {
                       <span className="rknob" />
                     </span>
                   </button>
+                ))}
+
+                {sliders.map((s) => (
+                  <label key={s.id} className="flex flex-col gap-1">
+                    <span className="flex justify-between text-sm text-gray-200">
+                      <span>{s.label}</span>
+                      <span className="mono text-gray-400">
+                        {s.value.toFixed(s.step >= 1 || s.step <= 0 ? 2 : s.step >= 0.01 ? 2 : 3)}
+                        {s.unit ? ` ${s.unit}` : ""}
+                      </span>
+                    </span>
+                    {/* No local drag state here, unlike the desktop card: on a touch screen the finger is on the
+                        knob, not tracking a cursor, and the snapshot's value is what the game really has. */}
+                    <input
+                      type="range"
+                      className="w-full accent-[#89b4fa] h-6"
+                      min={s.min}
+                      max={s.max}
+                      step={s.step > 0 ? s.step : "any"}
+                      value={s.value}
+                      onChange={(e) => sendSlider(s.id, Number(e.target.value))}
+                    />
+                  </label>
                 ))}
 
                 {p.actions.length > 0 && (

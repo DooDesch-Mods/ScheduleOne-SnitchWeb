@@ -39,6 +39,8 @@ export interface SnitchConn {
   control: (cmd: "start" | "stop" | "reset" | "report") => void;
   sendAction: (id: string) => void;
   sendToggle: (id: string, value: boolean) => void;
+  /** Write a mod slider. The game clamps to its range and snaps to its step, so any number in range is safe. */
+  sendSlider: (id: string, value: number) => void;
 }
 
 /** Parse the QR hash. Phase 1: "#remote&t=abcd". Phase 2 (relay): "#join=<code>&t=<token>&lan=<ip:port>". */
@@ -313,6 +315,9 @@ export function useSnitch(): SnitchConn {
     (id: string, value: boolean) => post({ cmd: "toggle", id, value: value ? "true" : "false" }),
     [post],
   );
+  // Dragging a slider fires on every pointer move, so the value goes over the wire as a plain number and the host
+  // clamps/snaps it. Sent unthrottled on purpose: these are loopback POSTs and a laggy knob is worse than chatty.
+  const sendSlider = useCallback((id: string, value: number) => post({ cmd: "slider", id, value: String(value) }), [post]);
 
-  return { snapshot, status, port, attempts, mode, remote, hostPresent, directUrl, caps, lan, control, sendAction, sendToggle };
+  return { snapshot, status, port, attempts, mode, remote, hostPresent, directUrl, caps, lan, control, sendAction, sendToggle, sendSlider };
 }

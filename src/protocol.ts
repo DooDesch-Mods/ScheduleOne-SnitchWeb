@@ -53,6 +53,18 @@ export interface PanelToggle {
   value: boolean;
 }
 
+// A continuous value a mod exposes. step of 0 means continuous. The host clamps and snaps every write, so the
+// dashboard may send anything in range without validating it first.
+export interface PanelSlider {
+  id: string;
+  label: string;
+  unit: string;
+  min: number;
+  max: number;
+  step: number;
+  value: number;
+}
+
 export interface Panel {
   id: string;
   title: string;
@@ -60,6 +72,8 @@ export interface Panel {
   text: string;
   actions: PanelAction[];
   toggles: PanelToggle[];
+  // Optional: a game running an older Snitch sends no sliders array at all.
+  sliders?: PanelSlider[];
 }
 
 // lvl: 0 = info, 1 = warning, 2 = error. ch = channel = mod id. seq = monotonic id (React key + de-dupe).

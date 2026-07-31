@@ -4,7 +4,7 @@ import { LogView } from "./LogView";
 import { RemoteView } from "./RemoteView";
 import { ConnectPhone } from "./ConnectPhone";
 import { useSnitch } from "./useSnitch";
-import type { CounterRow, Panel, SectionRow, StateBlock } from "./protocol";
+import type { CounterRow, Panel, PanelSlider, SectionRow, StateBlock } from "./protocol";
 
 const GROUP_COLORS: Record<string, string> = {
   Snitch: "#f38ba8",
@@ -19,7 +19,7 @@ export default function App() {
   const conn = useSnitch();
   if (conn.remote) return <RemoteView conn={conn} />;
 
-  const { snapshot, status, port, attempts, control, sendAction, sendToggle, caps, lan } = conn;
+  const { snapshot, status, port, attempts, control, sendAction, sendToggle, sendSlider, caps, lan } = conn;
   const connected = status === "connected" || status === "idle";
   const f = snapshot?.frame;
   const panels = snapshot?.panels ?? [];
@@ -76,6 +76,7 @@ export default function App() {
                     states={snapshot?.states ?? []}
                     sendAction={sendAction}
                     sendToggle={sendToggle}
+                    sendSlider={sendSlider}
                   />
                 ))}
               </div>
@@ -337,18 +338,68 @@ const ownerOf = (id: string) => {
   return i < 0 ? id : id.slice(0, i);
 };
 
+/**
+ * One mod value as a real range input.
+ *
+ * While you are dragging, the knob follows the pointer and NOT the snapshot. The game streams a fresh snapshot a few
+ * times a second, and letting that drive the input mid-drag makes the knob stutter backwards between frames - the
+ * value is in flight, so the incoming number is always slightly stale. On release the local value is dropped and the
+ * game's own reading takes over again, which is also what shows a clamp or a snap that the host applied.
+ */
+function SliderRow({ slider, onChange }: { slider: PanelSlider; onChange: (v: number) => void }) {
+  const [dragging, setDragging] = useState(false);
+  const [local, setLocal] = useState(slider.value);
+
+  const shown = dragging ? local : slider.value;
+  // Decimals that match the step, so a 0.005-step slider does not read "0.00" for every value.
+  const decimals = slider.step >= 1 || slider.step <= 0 ? 2 : slider.step >= 0.1 ? 1 : slider.step >= 0.01 ? 2 : 3;
+
+  return (
+    <label
+      className="flex flex-col gap-1 text-xs text-gray-300 select-none"
+      title={`${slider.id}  (${fmt(slider.min, decimals)} .. ${fmt(slider.max, decimals)}, step ${slider.step || "continuous"})`}
+    >
+      <span className="flex justify-between">
+        <span>{slider.label}</span>
+        <span className="mono text-gray-400">
+          {fmt(shown, decimals)}
+          {slider.unit ? ` ${slider.unit}` : ""}
+        </span>
+      </span>
+      <input
+        type="range"
+        className="w-full accent-[#89b4fa]"
+        min={slider.min}
+        max={slider.max}
+        step={slider.step > 0 ? slider.step : "any"}
+        value={shown}
+        onPointerDown={() => setDragging(true)}
+        onPointerUp={() => setDragging(false)}
+        onBlur={() => setDragging(false)}
+        onChange={(e) => {
+          const v = Number(e.target.value);
+          setLocal(v);
+          onChange(v);
+        }}
+      />
+    </label>
+  );
+}
+
 function PanelCard({
   panel,
   counters,
   states,
   sendAction,
   sendToggle,
+  sendSlider,
 }: {
   panel: Panel;
   counters: CounterRow[];
   states: StateBlock[];
   sendAction: (id: string) => void;
   sendToggle: (id: string, value: boolean) => void;
+  sendSlider: (id: string, value: number) => void;
 }) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const isCollapsed = collapsed.has(panel.id);
@@ -430,6 +481,14 @@ function PanelCard({
               </div>
             );
           })}
+
+          {(panel.sliders?.length ?? 0) > 0 && (
+            <div className="flex flex-col gap-2">
+              {panel.sliders!.map((s) => (
+                <SliderRow key={s.id} slider={s} onChange={(v) => sendSlider(s.id, v)} />
+              ))}
+            </div>
+          )}
 
           {panel.toggles.length > 0 && (
             <div className="flex flex-col gap-1.5">
