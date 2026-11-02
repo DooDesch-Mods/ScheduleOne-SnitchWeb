@@ -1,13 +1,14 @@
 import { useState } from "react";
 import type { PanelSlider } from "./protocol";
 import { WINDOWS, type WindowKey } from "./history";
+import { inkOn } from "./identity";
 
 export const fmt = (n: number, d = 2) => (Number.isFinite(n) ? n.toFixed(d) : "0");
 
 /** Race number in the mod's team colour. */
 export function Bib({ n, color, small }: { n: number; color: string; small?: boolean }) {
   return (
-    <span className={`bib${small ? " bib-s" : ""}`} style={{ ["--tc" as string]: color }} aria-label={`Bib ${n}`}>
+    <span className={`bib${small ? " bib-s" : ""}`} style={{ ["--tc" as string]: color, ["--bib-ink" as string]: inkOn(color) }}>
       {n}
     </span>
   );
@@ -15,13 +16,25 @@ export function Bib({ n, color, small }: { n: number; color: string; small?: boo
 
 /** The one window control; it remaps every number on the page. */
 export function WindowSeg({ value, onChange }: { value: WindowKey; onChange: (w: WindowKey) => void }) {
+  // Roving tabindex: only the selected radio is a tab stop, the arrow keys move the selection (and focus) inside.
+  const onKey = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const dir = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
+    if (dir === 0) return;
+    e.preventDefault();
+    const i = WINDOWS.findIndex((w) => w.key === value);
+    const next = WINDOWS[(i + dir + WINDOWS.length) % WINDOWS.length];
+    onChange(next.key);
+    const btns = e.currentTarget.querySelectorAll<HTMLButtonElement>("button");
+    btns[WINDOWS.indexOf(next)]?.focus();
+  };
   return (
-    <div className="seg" role="radiogroup" aria-label="Time window for every number">
+    <div className="seg" role="radiogroup" aria-label="Time window for every number" onKeyDown={onKey}>
       {WINDOWS.map((w) => (
         <button
           key={w.key}
           role="radio"
           aria-checked={value === w.key}
+          tabIndex={value === w.key ? 0 : -1}
           className={value === w.key ? "on" : undefined}
           onClick={() => onChange(w.key)}
         >

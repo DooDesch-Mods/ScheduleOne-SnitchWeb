@@ -39,7 +39,8 @@ function Dashboard({ conn }: { conn: SnitchConn }) {
 
   const openPhone = () => {
     setPhoneSignal((n) => n + 1);
-    phoneRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    phoneRef.current?.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
   };
 
   return (
@@ -82,22 +83,21 @@ function Dashboard({ conn }: { conn: SnitchConn }) {
             <section className="card" aria-labelledby="h-chart">
               <div className="cardh">
                 <h2 id="h-chart">Frame time</h2>
-                <small>
-                  {coverage(win, f.covered, f.count)} - {fmt(f.avgMs)} ms avg
+                <small title="Garbage collections per 1000 frames, averaged over the window. High means allocation churn, a common stutter source.">
+                  GC per 1k frames: gen0 {fmt(f.gc0, 1)}, gen1 {fmt(f.gc1, 1)}
                 </small>
               </div>
               <div className="chartwrap">
-                <FrameChart samples={st.windowSamples} refAt={st.refAt} winMs={winInfo.ms} avgMs={f.avgMs} />
+                <FrameChart
+                  samples={st.windowSamples}
+                  refAt={st.refAt}
+                  winMs={winInfo.ms}
+                  avgMs={f.avgMs}
+                  p95={f.p95}
+                  p99={f.p99}
+                  worstMs={f.maxMs}
+                />
               </div>
-              <dl className="kpis">
-                <Fig label="avg frame" v={`${fmt(f.avgMs)} ms`} tip="Mean frame time over the window. The load-bearing truth - lower is better." />
-                <Fig label="p95" v={`${fmt(f.p95)} ms`} tip="95th-percentile frame time, averaged over the window: the slow frames you feel as stutter." />
-                <Fig label="p99" v={`${fmt(f.p99)} ms`} tip="99th-percentile frame time, averaged over the window." />
-                <Fig label="worst frame" v={`${fmt(f.maxMs)} ms`} tip={`Slowest single frame in the window. Best frame: ${fmt(f.minMs)} ms.`} />
-                <Fig label="unattributed" v={`${fmt(st.unattributedShare, 0)}%`} tip="Share of the frame inside no section: frame mean minus the summed section means." />
-                <Fig label="gc0 / 1k" v={fmt(snapshot?.frame?.gc0 ?? 0, 1)} tip="Gen-0 garbage collections per 1000 frames. High = allocation churn, a common stutter source. Latest reading." />
-                <Fig label="gc1 / 1k" v={fmt(snapshot?.frame?.gc1 ?? 0, 1)} tip="Gen-1 garbage collections per 1000 frames. Latest reading." />
-              </dl>
             </section>
           </main>
 
@@ -187,15 +187,6 @@ function coverage(win: WindowKey, covered: number, count: number): string {
   return `last ${w.label} - ${fmt(covered, 0)} s collected`;
 }
 
-function Fig({ label, v, tip }: { label: string; v: string; tip: string }) {
-  return (
-    <div title={tip}>
-      <dt>{label}</dt>
-      <dd>{v}</dd>
-    </div>
-  );
-}
-
 function TopBar({
   status,
   port,
@@ -241,10 +232,10 @@ function TopBar({
   return (
     <header className="bar">
       <h1 className="brand">Snitch</h1>
-      <div className="conn" title={tip}>
+      <div className="conn" title={meta ? `${tip}\n${meta.replaceAll(" - ", "\n")}` : tip}>
         <Icon size={18} strokeWidth={2.5} className={`conn-i ${status}`} aria-hidden />
         <span>{text}</span>
-        {meta && <small>{meta}</small>}
+        {meta && <small className="conn-meta">{meta}</small>}
       </div>
       {live && (
         <>
@@ -252,7 +243,7 @@ function TopBar({
             <b>{fmt(fps, 0)}</b>
             <span>FPS avg</span>
           </div>
-          <div className="stat" title="Mean frame time over the selected window.">
+          <div className="stat stat-ms" title="Mean frame time over the selected window.">
             <b>{fmt(ms)} ms</b>
             <span>frame</span>
           </div>
@@ -261,7 +252,7 @@ function TopBar({
       <div className="grow" />
       <WindowSeg value={win} onChange={onWin} />
       {showPhone && (
-        <button className="btn ghost icon" onClick={onPhone} title="Connect a phone as a remote" aria-label="Connect a phone">
+        <button className="btn ghost icon btn-phone" onClick={onPhone} title="Connect a phone as a remote" aria-label="Connect a phone">
           <Smartphone size={18} aria-hidden />
         </button>
       )}
@@ -273,11 +264,11 @@ function TopBar({
       </button>
       {active ? (
         <button className="btn fill" title="Stop sampling (the game keeps running)" onClick={() => control("stop")}>
-          <Square size={16} strokeWidth={2.5} aria-hidden /> Stop sampling
+          <Square size={16} strokeWidth={2.5} aria-hidden /> Stop<span className="long"> sampling</span>
         </button>
       ) : (
         <button className="btn fill" title="Arm the profiler and start streaming live data" onClick={() => control("start")}>
-          <Play size={16} strokeWidth={2.5} aria-hidden /> Start sampling
+          <Play size={16} strokeWidth={2.5} aria-hidden /> Start<span className="long"> sampling</span>
         </button>
       )}
     </header>

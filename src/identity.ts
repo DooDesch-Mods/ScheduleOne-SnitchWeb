@@ -50,6 +50,23 @@ export function buildBibs(mods: Iterable<string>): Map<string, number> {
   return new Map(sorted.map((n, i) => [n, i + 1]));
 }
 
+const lin = (c: number) => {
+  const s = c / 255;
+  return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+};
+const luminance = (hex: string) => {
+  const n = parseInt(hex.slice(1), 16);
+  return 0.2126 * lin((n >> 16) & 255) + 0.7152 * lin((n >> 8) & 255) + 0.0722 * lin(n & 255);
+};
+
+/** Bib digit colour: white or navy, whichever has the higher contrast against the team colour. */
+export function inkOn(color: string): string {
+  const l = luminance(color);
+  const white = 1.05 / (l + 0.05);
+  const navy = (l + 0.05) / (luminance("#14213D") + 0.05);
+  return white >= navy ? "#FFFFFF" : "#14213D";
+}
+
 export function identityOf(mod: string, bibs: Map<string, number>): Identity {
   if (isUnattributed(mod)) return { bib: 0, color: UNATTRIBUTED_COLOR };
   return { bib: bibs.get(mod.toLowerCase()) ?? 0, color: teamColor(mod) };

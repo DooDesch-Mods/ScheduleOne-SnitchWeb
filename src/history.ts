@@ -31,6 +31,8 @@ export interface Sample {
   maxMs: number;
   p95: number;
   p99: number;
+  gc0: number;
+  gc1: number;
   secs: Map<string, SecSample>;
 }
 
@@ -78,6 +80,8 @@ export function useHistory(snapshot: Snapshot | null): HistoryStore {
         maxMs: f?.maxMs ?? 0,
         p95: f?.p95Ms ?? 0,
         p99: f?.p99Ms ?? 0,
+        gc0: f?.gc0 ?? 0,
+        gc1: f?.gc1 ?? 0,
         secs,
       });
       s.newestAt = at;
@@ -125,6 +129,9 @@ export interface FrameWindow {
   maxMs: number;
   p95: number;
   p99: number;
+  /** Mean gen-0 / gen-1 collections per 1000 frames over the window. */
+  gc0: number;
+  gc1: number;
   /** Seconds of history actually inside the window (less than the window while history is still filling). */
   covered: number;
   count: number;
@@ -169,6 +176,8 @@ export function computeStandings(store: HistoryStore, winMs: number, now: number
     maxMs: inWin.length ? Math.max(...inWin.map((x) => x.maxMs)) : 0,
     p95: mean(inWin.map((x) => x.p95)),
     p99: mean(inWin.map((x) => x.p99)),
+    gc0: mean(inWin.map((x) => x.gc0)),
+    gc1: mean(inWin.map((x) => x.gc1)),
     covered: inWin.length > 1 ? (inWin[inWin.length - 1].at - inWin[0].at) / 1000 : 0,
     count: inWin.length,
   };

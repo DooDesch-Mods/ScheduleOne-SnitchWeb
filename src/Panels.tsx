@@ -16,11 +16,11 @@ export function CounterList({ rows }: { rows: CounterRow[] }) {
   return (
     <>
       {rows.map((c) => (
-        <div key={c.id} className="ctl" title={`${c.id} = ${fmt(c.value, 2)} ${c.unit} [${c.state}]`}>
+        <div key={c.id} className="ctl" title={`${c.id} = ${c.state === "OK" ? fmt(c.value, 2) : "-"} ${c.unit} [${c.state}]`}>
           <span>{c.id}</span>
           <span className="ctl-val">
-            <span className="big">{fmt(c.value, 2)}</span>
-            {c.unit ? <span className="unit">{c.unit}</span> : null}
+            <span className="big">{c.state === "OK" ? fmt(c.value, Number.isInteger(c.value) ? 0 : 2) : "-"}</span>
+            {c.unit && c.state === "OK" ? <span className="unit">{c.unit}</span> : null}
             {c.state === "OK" ? (
               <span className="mark ok">
                 <Check size={14} strokeWidth={2.5} aria-hidden /> OK
@@ -99,7 +99,8 @@ export function ModPanel({
         <Bib n={id.bib} color={id.color} />
         <h2>{panel.title}</h2>
         <span className="pnh-r">
-          {ms != null ? <span className="pnh-ms">{fmt(ms)} ms</span> : dnf ? <span className="mark bad">DNF</span> : null}
+          {ms != null ? <span className="pnh-ms">{fmt(ms)} ms</span> : null}
+          {dnf ? <span className="mark bad">DNF</span> : null}
           {collapsed ? <ChevronRight size={18} aria-hidden /> : <ChevronDown size={18} aria-hidden />}
         </span>
       </button>

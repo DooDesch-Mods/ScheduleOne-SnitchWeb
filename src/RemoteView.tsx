@@ -2,7 +2,7 @@ import { useState } from "react";
 import { CircleCheck, CirclePause, Download, LoaderCircle, Play, RotateCcw, Square, Zap } from "lucide-react";
 import type { SnitchConn } from "./useSnitch";
 import { Standings } from "./Standings";
-import { Bib, Switch, WindowSeg, fmt } from "./ui";
+import { Bib, SliderRow, Switch, WindowSeg, fmt } from "./ui";
 import { WINDOWS, useClock, useHistory, useStandings, type WindowKey } from "./history";
 import { identityOf } from "./identity";
 
@@ -28,10 +28,11 @@ export function RemoteView({ conn }: { conn: SnitchConn }) {
   const winInfo = WINDOWS.find((w) => w.key === win)!;
   const f = st.frame;
 
-  const text = status === "connected" ? "Connected - sampling" : status === "idle" ? "Connected - sampling off" : "Searching";
+  const text = status === "connected" ? "Sampling" : status === "idle" ? "Sampling off" : "Searching";
   const Icon = status === "connected" ? CircleCheck : status === "idle" ? CirclePause : LoaderCircle;
 
-  const preview = showAll ? st.riders : st.riders.slice(0, PREVIEW_ROWS);
+  // DNF riders stay visible in the short list: they are the ones that need attention.
+  const preview = showAll ? st.riders : st.riders.filter((r, i) => i < PREVIEW_ROWS || r.dnf);
 
   return (
     <div className="remote">
@@ -43,7 +44,7 @@ export function RemoteView({ conn }: { conn: SnitchConn }) {
         </div>
         <div className="grow" />
         {connected && (
-          <div className="stat" title="Mean frame time over the selected window.">
+          <div className="stat" title="Mean frames per second over the selected window.">
             <b>{fmt(f.avgFps, 0)}</b>
             <span>FPS</span>
           </div>
@@ -103,12 +104,16 @@ export function RemoteView({ conn }: { conn: SnitchConn }) {
               if (p.actions.length === 0 && p.toggles.length === 0 && sliders.length === 0 && !p.text) return null;
               const id = identityOf(p.id, st.bibs);
               const ms = st.modMs.get(p.id.toLowerCase());
+              const dnf = st.riders.some((r) => r.dnf && r.mod.toLowerCase() === p.id.toLowerCase());
               return (
                 <section key={p.id} className="pn" style={{ ["--tc" as string]: id.color }}>
                   <div className="pnh static">
                     <Bib n={id.bib} color={id.color} />
                     <h2>{p.title}</h2>
-                    <span className="pnh-r">{ms != null ? <span className="pnh-ms">{fmt(ms)} ms</span> : null}</span>
+                    <span className="pnh-r">
+                      {ms != null ? <span className="pnh-ms">{fmt(ms)} ms</span> : null}
+                      {dnf ? <span className="mark bad">DNF</span> : null}
+                    </span>
                   </div>
                   <div className="pnb">
                     {p.text ? <pre className="pn-text">{p.text}</pre> : null}
@@ -124,26 +129,7 @@ export function RemoteView({ conn }: { conn: SnitchConn }) {
                     ))}
 
                     {sliders.map((s) => (
-                      <label key={s.id} className="ctl ctl-col">
-                        <span className="ctl-top">
-                          <span>{s.label}</span>
-                          <span className="big">
-                            {s.value.toFixed(s.step >= 1 || s.step <= 0 ? 2 : s.step >= 0.01 ? 2 : 3)}
-                            {s.unit ? ` ${s.unit}` : ""}
-                          </span>
-                        </span>
-                        {/* No local drag state here, unlike the desktop card: on a touch screen the finger is on the
-                            knob, not tracking a cursor, and the snapshot's value is what the game really has. */}
-                        <input
-                          type="range"
-                          className="range"
-                          min={s.min}
-                          max={s.max}
-                          step={s.step > 0 ? s.step : "any"}
-                          value={s.value}
-                          onChange={(e) => sendSlider(s.id, Number(e.target.value))}
-                        />
-                      </label>
+                      <SliderRow key={s.id} slider={s} onChange={(v) => sendSlider(s.id, v)} />
                     ))}
 
                     {p.actions.length > 0 && (

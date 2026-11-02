@@ -7,8 +7,9 @@ const PAD = { l: 46, r: 12, t: 14, b: 26 };
 
 interface Spike {
   i: number;
+  /** Peak of the per-snapshot mean frame time, not a single frame. */
   ms: number;
-  /** Seconds before the right edge at which the excursion began. */
+  /** Seconds relative to the right edge at which the excursion began (negative = in the past). */
   onset: number;
 }
 
@@ -21,7 +22,7 @@ function findSpike(pts: { t: number; ms: number }[], avg: number): Spike | null 
   if (peak < avg * 1.5 || peak - avg < 1.5) return null;
   let start = top;
   while (start > 0 && pts[start - 1].ms > avg * 1.25) start--;
-  return { i: top, ms: peak, onset: -pts[start].t };
+  return { i: top, ms: peak, onset: pts[start].t };
 }
 
 /**
@@ -34,11 +35,18 @@ export function FrameChart({
   refAt,
   winMs,
   avgMs,
+  p95,
+  p99,
+  worstMs,
 }: {
   samples: Sample[];
   refAt: number;
   winMs: number;
   avgMs: number;
+  p95: number;
+  p99: number;
+  /** Slowest single frame in the window. */
+  worstMs: number;
 }) {
   const wrap = useRef<HTMLDivElement>(null);
   const [w, setW] = useState(640);
@@ -58,7 +66,7 @@ export function FrameChart({
   const spike = useMemo(() => findSpike(pts, avgMs), [pts, avgMs]);
 
   const winS = winMs / 1000;
-  const peak = Math.max(avgMs * 1.2, ...pts.map((p) => p.ms), 1);
+  const peak = Math.max(avgMs * 1.2, p99 * 1.05, ...pts.map((p) => p.ms), 1);
   const yMax = niceMax(peak);
   const iw = Math.max(10, w - PAD.l - PAD.r);
   const ih = H - PAD.t - PAD.b;
@@ -100,9 +108,24 @@ export function FrameChart({
           </text>
         ))}
 
+        {[
+          { v: p99, name: "p99", below: false },
+          { v: p95, name: "p95", below: Math.abs(y(p99) - y(p95)) < 16 },
+        ].map(
+          (r) =>
+            r.v > 0 && (
+              <g key={r.name}>
+                <line x1={PAD.l} x2={PAD.l + iw} y1={y(r.v)} y2={y(r.v)} stroke="#4A5568" strokeWidth={1} strokeDasharray="2 4" />
+                <text x={PAD.l + 4} y={y(r.v) + (r.below ? 14 : -5)} className="ax-ref">
+                  {r.name} {fmt(r.v)} ms
+                </text>
+              </g>
+            ),
+        )}
+
         {avgMs > 0 && (
           <g>
-            <line x1={PAD.l} x2={PAD.l + iw} y1={y(avgMs)} y2={y(avgMs)} stroke="#1E9E4A" strokeWidth={2} strokeDasharray="7 5" />
+            <line x1={PAD.l} x2={PAD.l + iw} y1={y(avgMs)} y2={y(avgMs)} stroke="#14213D" strokeWidth={2} strokeDasharray="7 5" />
             <text x={PAD.l + iw - 2} y={y(avgMs) - 7} textAnchor="end" className="ax-avg">
               AVG {fmt(avgMs)} ms
             </text>
@@ -115,13 +138,18 @@ export function FrameChart({
           <g>
             <line x1={x(pts[spike.i].t)} x2={x(pts[spike.i].t)} y1={PAD.t} y2={PAD.t + ih} stroke="#D7262E" strokeWidth={2} />
             <circle cx={x(pts[spike.i].t)} cy={y(spike.ms)} r={6} fill="#fff" stroke="#D7262E" strokeWidth={3} />
-            <g transform={`translate(${labelRight ? x(pts[spike.i].t) - 138 : x(pts[spike.i].t) + 10},${PAD.t + 2})`}>
-              <rect width={128} height={46} rx={3} fill="#D7262E" />
+            <line x1={x(spike.onset)} x2={x(spike.onset)} y1={PAD.t + ih} y2={PAD.t + ih + 7} stroke="#D7262E" strokeWidth={3} />
+            <g transform={`translate(${labelRight ? x(pts[spike.i].t) - 188 : x(pts[spike.i].t) + 10},${PAD.t + 2})`}>
+              <rect width={178} height={62} rx={3} fill="#D7262E" />
               <text x={10} y={21} className="spike-t">
-                SPIKE {fmt(spike.ms, 1)} ms
+                SPIKE {fmt(spike.ms, 1)} ms avg
               </text>
               <text x={10} y={38} className="spike-s">
-                onset at {fmt(spike.onset, 1)} s
+                onset {spike.onset < 0 ? "-" : ""}
+                {fmt(Math.abs(spike.onset), 1)} s
+              </text>
+              <text x={10} y={54} className="spike-s">
+                worst frame {fmt(worstMs, 1)} ms
               </text>
             </g>
           </g>
