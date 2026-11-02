@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Check, ChevronDown, ChevronRight, Copy, Smartphone } from "lucide-react";
 import QRCode from "qrcode";
 import { openRelay, newPairingCode, HOSTED_ORIGIN, type RelayHandle } from "./relay";
 import type { LanInfo } from "./useSnitch";
@@ -18,10 +19,13 @@ export function ConnectPhone({
   lan,
   port,
   snapshot,
+  openSignal,
 }: {
   lan: LanInfo | null;
   port: number | null;
   snapshot: Snapshot | null;
+  /** Bumped by the top bar button: opens the panel and starts the pairing bridge. */
+  openSignal?: number;
 }) {
   const [open, setOpen] = useState(false);
   const [activated, setActivated] = useState(false);
@@ -39,14 +43,25 @@ export function ConnectPhone({
   const includeLan = !!lan?.enabled && !!lan.bundled && !!lan.ip && !!lan.token && lan.token === token;
   const phoneUrl = code && token ? `${HOSTED_ORIGIN}/#join=${encodeURIComponent(code)}&t=${encodeURIComponent(token)}${includeLan ? `&lan=${lan!.ip}:${lan!.port}` : ""}` : "";
 
+  const activate = () => {
+    if (activated) return;
+    setCode(newPairingCode());
+    setToken(lan?.token || newPairingCode());
+    setActivated(true);
+  };
   const expand = () => {
     setOpen((o) => !o);
-    if (!activated) {
-      setCode(newPairingCode());
-      setToken(lan?.token || newPairingCode());
-      setActivated(true);
-    }
+    activate();
   };
+
+  // The top bar's phone button opens the panel from outside.
+  const signalRef = useRef(openSignal ?? 0);
+  useEffect(() => {
+    if (openSignal == null || openSignal === signalRef.current) return;
+    signalRef.current = openSignal;
+    setOpen(true);
+    activate();
+  }, [openSignal]);
 
   // Host bridge: relay the local game to a phone. Runs for the session once activated.
   useEffect(() => {
@@ -65,8 +80,8 @@ export function ConnectPhone({
         if (p.id) params.id = p.id;
         if (p.value) params.value = p.value;
         const qs = new URLSearchParams(params).toString();
-        fetch(`http://127.0.0.1:${lp}/control?${qs}`, { method: "POST" }).catch(() => {
-          /* best-effort */
+        fetch(`http://127.0.0.1:${lp}/control?${qs}`, { method: "POST" }).catch((err) => {
+          console.warn("[snitch] relaying a phone command to the game failed", err);
         });
       },
       onEvent: (ev, info) => {
@@ -96,7 +111,8 @@ export function ConnectPhone({
       .then((s) => {
         if (!cancelled) setSvg(s);
       })
-      .catch(() => {
+      .catch((err) => {
+        console.warn("[snitch] QR rendering failed", err);
         if (!cancelled) setSvg("");
       });
     return () => {
@@ -111,65 +127,43 @@ export function ConnectPhone({
         setCopied(true);
         setTimeout(() => setCopied(false), 1500);
       },
-      () => {},
+      (err) => console.warn("[snitch] copying the phone URL failed", err),
     );
   };
 
   return (
-    <div className="mt-4 rounded-xl bg-[#11151f] border border-[#1b1f2e]">
-      <button
-        className="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold text-gray-300 hover:opacity-80"
-        onClick={expand}
-        title="Use your phone as a remote for the profiler"
-      >
-        <span>📱 Connect a phone</span>
-        <span className="flex items-center gap-2 text-xs font-normal">
-          <span
-            className="inline-block w-2 h-2 rounded-full"
-            style={{ background: phones > 0 ? "#a6e3a1" : activated ? "#f9e2af" : "#6b7280" }}
-          />
-          <span className="text-gray-500">
-            {phones > 0 ? `${phones} phone${phones > 1 ? "s" : ""} connected` : activated ? "ready to pair" : "off"}
-          </span>
-          <span className="text-gray-600">{open ? "▾" : "▸"}</span>
-        </span>
+    <section className="card phone">
+      <button className="cardh cardh-btn" onClick={expand} aria-expanded={open} title="Use your phone as a remote for the profiler">
+        <h2>
+          <Smartphone size={18} aria-hidden /> Connect a phone
+        </h2>
+        <small className="phone-state">
+          <span className={`phone-dot${phones > 0 ? " on" : ""}`} aria-hidden />
+          {phones > 0 ? `${phones} phone${phones > 1 ? "s" : ""} connected` : activated ? "Ready to pair" : "Off"}
+          {open ? <ChevronDown size={16} aria-hidden /> : <ChevronRight size={16} aria-hidden />}
+        </small>
       </button>
 
       {open && (
-        <div className="px-4 pb-4">
-          <div className="flex flex-col sm:flex-row gap-4 items-start">
-            <div
-              className="rounded-lg bg-white p-2 shrink-0"
-              style={{ width: 168, height: 168 }}
-              // eslint-disable-next-line react/no-danger
-              dangerouslySetInnerHTML={{ __html: svg }}
-            />
-            <div className="text-xs text-gray-400 leading-relaxed flex flex-col gap-2">
-              <div>
-                Scan with your phone from <b className="text-gray-200">any network</b>. It opens a compact remote
-                to start/stop sampling and trigger every mod's actions - no need to switch back to this window.
-                Keep this tab open; it bridges the profiler to your phone.
-              </div>
-              {includeLan ? (
-                <div className="text-gray-500">
-                  On the same Wi-Fi, the phone can also connect directly (faster, no cloud) with one tap.
-                </div>
-              ) : null}
-              <button
-                className="text-left font-mono text-[11px] text-[#89b4fa] break-all hover:underline"
-                onClick={copy}
-                title="Copy the URL"
-              >
-                {phoneUrl} {copied ? "✓ copied" : "⧉"}
-              </button>
-              <div className="text-gray-500">
-                Data is end-to-end encrypted with a one-time key from the QR - the relay only forwards ciphertext,
-                so your telemetry stays private even over the internet.
-              </div>
-            </div>
+        <div className="phone-body">
+          <div className="phone-qr" dangerouslySetInnerHTML={{ __html: svg }} />
+          <div className="phone-text">
+            <p>
+              Scan with your phone from <b>any network</b>. It opens a compact remote to start and stop sampling and
+              trigger every mod's actions. Keep this tab open; it bridges the profiler to your phone.
+            </p>
+            {includeLan ? <p className="muted">On the same Wi-Fi, the phone can also connect directly, without the cloud.</p> : null}
+            <button className="phone-url" onClick={copy} title="Copy the URL">
+              <span>{phoneUrl}</span>
+              {copied ? <Check size={14} aria-hidden /> : <Copy size={14} aria-hidden />}
+              {copied ? "Copied" : null}
+            </button>
+            <p className="muted">
+              Data is end-to-end encrypted with a one-time key from the QR. The relay only forwards ciphertext.
+            </p>
           </div>
         </div>
       )}
-    </div>
+    </section>
   );
 }
