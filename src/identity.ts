@@ -1,5 +1,5 @@
-// Rider identity: one bib number and one team colour per mod. The same rule runs on the dashboard, the phone
-// remote and the in-game overlay, so a mod looks identical on every surface.
+// Bib numbers and team colours per mod, for the dashboard and the phone remote. Snitch's in-game overlay computes
+// the same values in Standings.cs.
 
 export const UNATTRIBUTED = "(unattributed)";
 export const UNATTRIBUTED_COLOR = "#5B6573";
@@ -67,7 +67,11 @@ export function inkOn(color: string): string {
   return white >= navy ? "#FFFFFF" : "#14213D";
 }
 
+/**
+ * Identity of one mod. A name missing from `bibs` gets the next free number after the numbered mods (size + 1),
+ * never 0, which is reserved for the unattributed rider.
+ */
 export function identityOf(mod: string, bibs: Map<string, number>): Identity {
   if (isUnattributed(mod)) return { bib: 0, color: UNATTRIBUTED_COLOR };
-  return { bib: bibs.get(mod.toLowerCase()) ?? 0, color: teamColor(mod) };
+  return { bib: bibs.get(mod.toLowerCase()) ?? bibs.size + 1, color: teamColor(mod) };
 }

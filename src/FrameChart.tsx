@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Sample } from "./history";
 import { fmt } from "./ui";
 
@@ -51,6 +51,9 @@ export function FrameChart({
   const wrap = useRef<HTMLDivElement>(null);
   const [w, setW] = useState(640);
   const [hover, setHover] = useState<number | null>(null);
+  const refLabels = useRef<SVGGElement>(null);
+  // Rendered width of the widest p95/p99 label; the fallback fits "p99 100.0 ms" until it is measured.
+  const [refLabelW, setRefLabelW] = useState(110);
 
   useEffect(() => {
     const el = wrap.current;
@@ -89,11 +92,20 @@ export function FrameChart({
 
   const hp = hover != null && hover < pts.length ? pts[hover] : null;
   const labelRight = spike ? x(pts[spike.i].t) > PAD.l + iw * 0.6 : false;
-  // The p95/p99 labels start at the left edge; when the full-height spike line would run through them, they start
-  // just right of the line instead.
-  const refLabelW = 84;
-  const spikeX = spike ? x(pts[spike.i].t) : -1;
-  const refLabelX = spikeX > PAD.l - 2 && spikeX < PAD.l + 4 + refLabelW + 4 ? spikeX + 6 : PAD.l + 4;
+  const spikeX = spike ? x(pts[spike.i].t) : null;
+  // The p95/p99 labels sit at the left edge. When the full-height spike line would run through that box, they move
+  // to just right of the line, or to the right end of the plot if there is no room there.
+  const refLabelX = pickRefLabelX(spikeX, refLabelW, PAD.l, PAD.l + iw);
+
+  useLayoutEffect(() => {
+    const g = refLabels.current;
+    if (!g) return;
+    let max = 0;
+    g.querySelectorAll("text").forEach((t) => {
+      max = Math.max(max, (t as SVGTextElement).getBBox().width);
+    });
+    if (max > 0 && Math.abs(max - refLabelW) > 0.5) setRefLabelW(max);
+  });
 
   return (
     <div ref={wrap} className="chart">
@@ -113,6 +125,7 @@ export function FrameChart({
           </text>
         ))}
 
+        <g ref={refLabels}>
         {[
           { v: p99, name: "p99", below: false },
           { v: p95, name: "p95", below: Math.abs(y(p99) - y(p95)) < 16 },
@@ -127,6 +140,7 @@ export function FrameChart({
               </g>
             ),
         )}
+        </g>
 
         {avgMs > 0 && (
           <g>
@@ -194,4 +208,12 @@ export function FrameChart({
 function niceMax(v: number): number {
   const steps = [2, 4, 8, 12, 16, 24, 32, 48, 64, 100, 200, 500, 1000];
   return steps.find((s) => s >= v) ?? Math.ceil(v);
+}
+
+/** Left x of the reference labels: the left edge, else right of the spike line, else the right end of the plot. */
+function pickRefLabelX(spikeX: number | null, labelW: number, left: number, right: number): number {
+  const gap = 6;
+  const clear = (x0: number) => spikeX === null || spikeX < x0 - gap || spikeX > x0 + labelW + gap;
+  const candidates = [left + 4, (spikeX ?? 0) + gap, right - 4 - labelW];
+  return candidates.find((c) => c >= left + 4 && c + labelW <= right - 2 && clear(c)) ?? left + 4;
 }
