@@ -89,6 +89,11 @@ export function FrameChart({
 
   const hp = hover != null && hover < pts.length ? pts[hover] : null;
   const labelRight = spike ? x(pts[spike.i].t) > PAD.l + iw * 0.6 : false;
+  // The p95/p99 labels start at the left edge; when the full-height spike line would run through them, they start
+  // just right of the line instead.
+  const refLabelW = 84;
+  const spikeX = spike ? x(pts[spike.i].t) : -1;
+  const refLabelX = spikeX > PAD.l - 2 && spikeX < PAD.l + 4 + refLabelW + 4 ? spikeX + 6 : PAD.l + 4;
 
   return (
     <div ref={wrap} className="chart">
@@ -116,7 +121,7 @@ export function FrameChart({
             r.v > 0 && (
               <g key={r.name}>
                 <line x1={PAD.l} x2={PAD.l + iw} y1={y(r.v)} y2={y(r.v)} stroke="#4A5568" strokeWidth={1} strokeDasharray="2 4" />
-                <text x={PAD.l + 4} y={y(r.v) + (r.below ? 14 : -5)} className="ax-ref">
+                <text x={refLabelX} y={y(r.v) + (r.below ? 14 : -5)} className="ax-ref">
                   {r.name} {fmt(r.v)} ms
                 </text>
               </g>
